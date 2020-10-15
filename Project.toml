@@ -3,6 +3,17 @@ uuid = "bf697cf8-868b-4e4c-8c7d-101d0600a0bc"
 authors = ["Johnny Chen <johnnychen94@hotmail.com>"]
 version = "0.1.0"
 
+[deps]
+ImageCore = "a09fc81d-aa75-5fe9-8630-4744c3626534"
+ImageDistances = "51556ac3-7006-55f5-8cb3-34580c88182d"
+ImageFiltering = "6a3955dd-da59-5b1f-98d4-e7296123deb5"
+ImageQualityIndexes = "2996bd0c-7a13-11e9-2da2-2f5ce47296a9"
+LinearAlgebra = "37e2e46d-f89d-539d-b4ee-838fcccc9c8e"
+LowRankApprox = "898213cb-b102-5a47-900c-97e73b919f73"
+OffsetArrays = "6fe1bfb0-de20-5000-8ca7-80f57d26f881"
+ProgressMeter = "92933f4c-e287-5a05-a399-4b506db050ca"
+Statistics = "10745b16-79ce-11e8-11f9-7d13ad32a3b2"
+
 [compat]
 julia = "1"
 
