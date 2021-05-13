@@ -73,7 +73,7 @@ function block_matching(
         num_patches,
         patch_size,
         search_window_size=size(img),
-        patch_stride=patch_size)::Vector{CartesianIndices{ndims(img)}}
+        patch_stride=patch_size)
     # Offset is not considered, it might work, it might not work. I don't know yet.
     Base.require_one_based_indexing(img)
 
@@ -93,22 +93,25 @@ function block_matching(
     # for simplicity, only consider the patches that do not exceed the image boundary
     # This requires at least Julia 1.6: https://github.com/JuliaLang/julia/pull/37829
     I_first, I_last = first(R) + rₚ, last(R) - rₚ
-    Rw = vec(max(I_first, p-rₛ):Δ:min(p+rₛ, I_last))
+    Rw = max(I_first, p-rₛ):Δ:min(p+rₛ, I_last)
     length(Rw) <= num_patches && throw(ArgumentError("search window size $(search_window_size) is too small to get enough patches"))
 
     # patch_p is used repeatly so we need a contiguous memeory layout to get better performance
     # TODO: pre-allocate patch_p?
     patch_p = img[p - rₚ:p + rₚ]
-    # patch_q = similar(patch_p)
-    dist = map(Rw) do q
+    T = result_type(f, patch_p, patch_p)
+    dist = Vector{T}(undef, length(Rw))
+    @inbounds for i in 1:length(Rw)
+        q = Rw[i]
         patch_q = @view img[q - rₚ:q + rₚ]
-        f(patch_p, patch_q)
+        dist[i] = f(patch_p, patch_q)
     end
-    dist_ranks = partialsortperm(dist, 1:num_patches)
+    ix = similar(dist, Int)
+    dist_ranks = partialsortperm!(ix, dist, 1:num_patches)
 
     return [q - rₚ:q + rₚ for q in Rw[dist_ranks]]
 end
-block_matching(img, p::CartesianIndex; kwargs...) = block_matching(ssd, img, p::CartesianIndex; kwargs...)
+block_matching(img, p::CartesianIndex; kwargs...) = block_matching(SqEuclidean(), img, p::CartesianIndex; kwargs...)
 
 
 # Threads helper
