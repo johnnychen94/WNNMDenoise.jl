@@ -10,6 +10,7 @@ using ImageFiltering
 using ImageDistances
 using Statistics
 using LowRankApprox
+using BlockMatching
 
 using ImageQualityIndexes # TODO: remove this
 using ProgressMeter # TODO: remove this
@@ -188,12 +189,13 @@ function _estimate_patch!(out, imgₑₛₜ, imgₙ, p;
     rₚ = CartesianIndex(patch_size .÷ 2)
     p_indices = p - rₚ:p + rₚ
 
-    patch_q_indices = block_matching(imgₑₛₜ, p;
-        num_patches=num_patches,
-        patch_size=patch_size,
-        search_window_size=window_size,
-        patch_stride=1
+    alg = FullSearch(SqEuclidean(), 2;
+        patch_radius=rₚ,
+        search_radius=window_size.÷2,
+        search_stride=1
     )
+    q_inds = multi_match(alg, imgₑₛₜ, imgₑₛₜ, p; num_patches=num_patches)
+    patch_q_indices =  [q - rₚ:q + rₚ for q in q_inds]
     patch_q_indices = hcat([indices[:] for indices in patch_q_indices]...)
     m = mean(@view(imgₑₛₜ[patch_q_indices]); dims=2)
 
