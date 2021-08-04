@@ -1,15 +1,10 @@
 module WNNMDenoise
 
-using Base.Iterators
 using LinearAlgebra
-using OffsetArrays
 using ImageCore
-using ImageCore.MappedArrays
 using ImageCore: NumberLike, GenericGrayImage, GenericImage
-using ImageFiltering
 using ImageDistances
 using Statistics
-using LowRankApprox
 using BlockMatching
 
 using ImageQualityIndexes # TODO: remove this
@@ -20,33 +15,76 @@ include("utilities.jl")
 export WNNM
 
 """
+    WNNM(noise_level; kwargs...)
+
+Weighted nuclear norm minimization denoising algorithm.
+
+!!! note
+    To keep consistent with the original implementation[2], here we stick
+    to the 0-255 value range world. If the image is 0-1 range, then the default
+    parameters may not work at all.
+
+# Arguments
+
+- `noise_level`: the (estimated) gaussian noise level, used in the first WNNM iteration.
+
+# Keywords
+
+The default values of these keywords come from the original reference
+implementation [2]. Except that `patch_size` in our implementation has
+to be odd number.
+
+- `K`: the number of WNNM iterations
+- `δ`: step value for each WNNM iteration
+
+keywords that control the block matching step, it can be scalar or a vector of length `K`. If it is
+a vector then it specifies the values for each WNNM iteration
+
+- `num_patches`: the number of matched patches.
+- `patch_size`: patch size.
+- `patch_stride`: the stride of each sliding window.
+- `window_size`: non-local search size in block matching.
+
+keywords that control the internal WNNM solver, which is a small threshold-svd loop
+on the extracted block matching results.
+
+- `λ`: weight constant used to estimate the remained noise level of each patch.
+- `C`: weight constant in WNNM solver used by the original implementation.
+
+# Examples
+
+```julia
+using TestImages, WNNMDenoise, ImageTransformations
+
+# 1. load a clean image
+#    0-255 range is required
+clean_img = Float64.(imresize(testimage("cameraman") .* 255, ratio=0.5));
+
+# 2. add guassian noise
+σₙ = 40;
+noisy_img = clean_img .+ σₙ .* randn(Float32, size(clean_img))
+
+# 3. denoise using the WNNM denoiser
+f = WNNM(40)
+denoised_img = f(copy(noisy_img), noisy_img)
+```
 
 # References
 
-[1] Gu, S., Zhang, L., Zuo, W., & Feng, X. (2014). Weighted nuclear norm minimization with application to image denoising. In _Proceedings of the IEEE Conference on Computer Vision and Pattern Recognition_ (pp. 2862-2869).
+[1] Gu, Shuhang, et al. "Weighted nuclear norm minimization with application to image denoising." _Proceedings of the IEEE conference on computer vision and pattern recognition_. 2014.
+[2] The MATLAB reference implementation: http://www4.comp.polyu.edu.hk/~cslzhang/code/WNNM_code.zip
 
 """
 struct WNNM
-    "Estimated gaussian noise level"
     noise_level::Float64
-    "Number of WNNM iterations"
     K::Int
-    "step value for each WNNM iteration"
     δ::Float64
-    "number of patches in each WNNM iteration"
     num_patches::Vector{Int}
-    "patch size in each WNNM iteration"
     patch_size::Vector{Int}
-    "patch stride in each WNNM iteration"
     patch_stride::Vector{Int}
-    "weight constant used to estimate the remained noise level of each patch"
     λ::Float64
-    "weight constant in WNNM solver"
     C::Float64
-    "non-local search size in block matching"
     window_size::Int
-    "matrix rank that used to allow early-stop in svd approximation"
-    svd_rank::Vector{Int}
 end
 
 function WNNM(noise_level;
@@ -57,10 +95,9 @@ function WNNM(noise_level;
               num_patches=nothing,
               K=nothing,
               λ=nothing,
-              svd_rank=nothing,
               patch_stride=nothing)
     if noise_level <= 20
-        isnothing(patch_size) && (patch_size = 6)
+        isnothing(patch_size) && (patch_size = 5)
         isnothing(num_patches) && (num_patches = 70)
         isnothing(K) && (K = 8)
         isnothing(λ) && (λ = 0.56)
@@ -70,7 +107,7 @@ function WNNM(noise_level;
         isnothing(K) && (K = 12)
         isnothing(λ) && (λ = 0.56)
     elseif noise_level <= 60
-        isnothing(patch_size) && (patch_size = 8)
+        isnothing(patch_size) && (patch_size = 7)
         isnothing(num_patches) && (num_patches = 120)
         isnothing(K) && (K = 14)
         isnothing(λ) && (λ = 0.58)
@@ -81,17 +118,10 @@ function WNNM(noise_level;
         isnothing(λ) && (λ = 0.58)
     end
 
+    @assert isodd(patch_size) "patch size is expected to be odd number, instead it is $patch_size"
     patch_size isa Number && (patch_size = fill(patch_size, K))
     isnothing(patch_stride) && (patch_stride = @. max(1, patch_size ÷ 2 - 1))
     patch_stride isa Number && (patch_stride = fill(patch_stride, K))
-
-    if isnothing(svd_rank)
-        svd_rank = map(enumerate(patch_size)) do (i, sz)
-            min(10 + 5i, 10 + sz^2 ÷ 2)
-        end
-    elseif svd_rank isa Number
-        svd_rank = fill(svd_rank, K)
-    end
 
     num_patches = fill(num_patches - 10, K)
     drop_freq = 2
@@ -100,7 +130,7 @@ function WNNM(noise_level;
         num_patches[k] = (k - 1) % drop_freq == 0 ? num_patches[k - 1] - 10 : num_patches[k - 1]
     end
 
-    WNNM(noise_level, K, δ, num_patches, patch_size, patch_stride, λ, C, window_size, svd_rank)
+    WNNM(noise_level, K, δ, num_patches, patch_size, patch_stride, λ, C, window_size)
 end
 
 ## Implementation
@@ -133,13 +163,12 @@ function (f::WNNM)(imgₑₛₜ, imgₙ; clean_img=nothing)
                 λ=T(f.λ),
                 C=T(f.C),
                 σₚ=σₚ,
-                svd_rank=f.svd_rank[iter],
             )
         end
 
         # TODO: remove this logging part when it is ready
         if !isnothing(clean_img)
-            @info "Result" iter psnr = assess_psnr(clean_img, imgₑₛₜ, 255) num_patches = f.num_patches[iter] svd_rank=f.svd_rank[iter]
+            @info "Result" iter psnr = assess_psnr(clean_img, imgₑₛₜ, 255) num_patches = f.num_patches[iter]
             display(Gray.(imgₑₛₜ ./ 255))
             sleep(0.1)
         end
@@ -184,12 +213,11 @@ function _estimate_patch!(out, imgₑₛₜ, imgₙ, p;
                          window_size,
                          λ,
                          C,
-                         svd_rank,
                          σₚ=nothing)
     rₚ = CartesianIndex(patch_size .÷ 2)
     p_indices = p - rₚ:p + rₚ
 
-    alg = FullSearch(SqEuclidean(), 2;
+    alg = FullSearch(2;
         patch_radius=rₚ,
         search_radius=window_size.÷2,
         search_stride=1
@@ -204,7 +232,7 @@ function _estimate_patch!(out, imgₑₛₜ, imgₙ, p;
         σₚ = _estimate_noise_level(view(imgₑₛₜ, p_indices), view(imgₙ, p_indices), noise_level; λ=λ)
     end
     out .= @view(imgₑₛₜ[patch_q_indices]) .- m
-    WNNM_optimizer!(out, out, eltype(out)(σₚ); C=C, svd_rank=svd_rank)
+    WNNM_optimizer!(out, out, eltype(out)(σₚ); C=C)
     out .+= m
 
     return patch_q_indices
@@ -227,19 +255,13 @@ The weight `w` is specially chosen so that it satisfies the condition of Corolla
 [1] Gu, S., Zhang, L., Zuo, W., & Feng, X. (2014). Weighted nuclear norm minimization with application to image denoising. In _Proceedings of the IEEE Conference on Computer Vision and Pattern Recognition_ (pp. 2862-2869).
 
 """
-function WNNM_optimizer!(out, Y, σₚ; C, svd_rank, fixed_point_num_iters=3)
+function WNNM_optimizer!(out, Y, σₚ; C, fixed_point_num_iters=3)
     # Apply Corollary 1 in [1] for image denoise purpose
     # Note: this solver is reserved to the denoising method and is not supposed to be used in other
     #       applications; it simply isn't designed so.
 
-    # This is different from the original implementation. Here we use an approximate version of svd;
-    # it gives better performance in both speed and denoising result.
     n = size(Y, 2)
-    if svd_rank >= ceil(Int, 0.5minimum(size(Y)))
-        U, ΣY, V = svd!(Y)
-    else
-        U, ΣY, V = LowRankApprox.psvd(Y; rank=svd_rank)
-    end
+    U, ΣY, V = svd!(Y)
 
     # For image denoising problems, it is natural to shrink large singular value less, i.e., to set
     # smaller weight to large singular value. For this reason, it uses `w = (C * sqrt(n))/(ΣX + eps())`
