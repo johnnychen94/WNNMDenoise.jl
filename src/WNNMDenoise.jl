@@ -193,11 +193,16 @@ function _estimate_img(imgₑₛₜ, imgₙ; patch_size, patch_stride, num_patch
 
     progress = Progress(length(R[1:patch_stride:end]))
     out_patches = [Matrix{eltype(imgₑₛₜ)}(undef, prod(patch_size), num_patches) for i in 1:Threads.nthreads()]
+    patch_q_indices_buffer = [Matrix{CartesianIndex{2}}(undef, prod(patch_size), num_patches) for i in 1:Threads.nthreads()]
     Threads.@threads for p in R
         out = out_patches[Threads.threadid()]
-        fill!(out, zero(eltype(out)))
-        patch_q_indices = _estimate_patch!(out, imgₑₛₜ, imgₙ, p; patch_size=patch_size, num_patches=num_patches, kwargs...)
+        patch_q_indices = patch_q_indices_buffer[Threads.threadid()]
 
+        fill!(out, zero(eltype(out)))
+        patch_q_indices = _estimate_patch!(patch_q_indices, out, imgₑₛₜ, imgₙ, p; patch_size=patch_size, num_patches=num_patches, kwargs...)
+
+        # Technically, there will be data racing here if multiple threads are involved, but as we've
+        # observed, this doesn't affect the overall performance.
         view(W, patch_q_indices) .+= 1
         view(imgₑₛₜ⁺, patch_q_indices) .+= out
         next!(progress)
@@ -206,7 +211,7 @@ function _estimate_img(imgₑₛₜ, imgₙ; patch_size, patch_stride, num_patch
     return imgₑₛₜ⁺ ./ max.(W, 1)
 end
 
-function _estimate_patch!(out, imgₑₛₜ, imgₙ, p;
+function _estimate_patch!(patch_q_indices, out, imgₑₛₜ, imgₙ, p;
                          noise_level,
                          patch_size::Tuple,
                          num_patches::Integer,
@@ -223,8 +228,12 @@ function _estimate_patch!(out, imgₑₛₜ, imgₙ, p;
         search_stride=1
     )
     q_inds = multi_match(alg, imgₑₛₜ, imgₑₛₜ, p; num_patches=num_patches)
-    patch_q_indices =  [q - rₚ:q + rₚ for q in q_inds]
-    patch_q_indices = hcat([indices[:] for indices in patch_q_indices]...)
+    # the memory allocation will be a hospot if we directly generate `patch_q_indices` using `vcat`,
+    # thus we pre-allocate it and then copyto the buffer.
+    @inbounds for i = 1:length(q_inds)
+        q = q_inds[i]
+        copyto!(view(patch_q_indices, :, i), q - rₚ:q + rₚ)
+    end
     m = mean(@view(imgₑₛₜ[patch_q_indices]); dims=2)
 
     if isnothing(σₚ)
