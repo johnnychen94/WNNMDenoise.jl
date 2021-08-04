@@ -270,7 +270,7 @@ function WNNM_optimizer!(out, Y, σₚ; C, fixed_point_num_iters=3)
     #       applications; it simply isn't designed so.
 
     n = size(Y, 2)
-    U, ΣY, V = svd!(Y)
+    F = svd!(Y)
 
     # For image denoising problems, it is natural to shrink large singular value less, i.e., to set
     # smaller weight to large singular value. For this reason, it uses `w = (C * sqrt(n))/(ΣX + eps())`
@@ -282,17 +282,17 @@ function WNNM_optimizer!(out, Y, σₚ; C, fixed_point_num_iters=3)
     # from ΣY to get an relatively good estimation of it.
     # TODO: could we set default σₚ as 0?
     # TODO: is this the best initialization we can get?
-    ΣX = @. sqrt(max(ΣY^2 - n * σₚ^2, 0))
+    ΣX = @. sqrt(max(F.S^2 - n * σₚ^2, 0))
     for _ in 1:fixed_point_num_iters
         # the iterative algorithm proposed in section 2.2.2 in [1]
         # Step 1 in the iterative algorithm becomes trivial and a no-op
 
         # Step 2 degenerates to a soft thresholding; both P and Q are identity matrix.
         # all in one line to avoid unnecessary allocation for temporarily variable w
-        @. ΣX = soft_threshold(ΣY, (C * sqrt(n) * σₚ^2) / (ΣX + eps()))
+        @. ΣX = soft_threshold(F.S, (C * sqrt(n) * σₚ^2) / (ΣX + eps()))
     end
 
-    mul!(out, rmul!(U, Diagonal(ΣX)), V')
+    mul!(out, rmul!(F.U, Diagonal(ΣX)), F.Vt)
 end
 
 
