@@ -1,21 +1,24 @@
 using WNNMDenoise
-using ImageTransformations, TestImages, FileIO, ImageQualityIndexes
-using Random
+using ImageTransformations, FileIO, ImageQualityIndexes, MAT
 using Test
 
 @testset "WNNMDenoise.jl" begin
     imgfile = joinpath(pkgdir(WNNMDenoise), "house.png")
-    img = imresize(Float64.(load(imgfile)) * 255, ratio=0.5);
-    clean_img = img;
-    σₙ = 40;
-    noisy_img = clean_img .+ σₙ .* randn(MersenneTwister(0), Float32, size(clean_img))
+    img = Float64.(load(imgfile) * 255)
 
-    @test assess_psnr(noisy_img, img, 255) ≈ 16.08294 atol=1e-5
+    σₙ = 40
+    noisy_img_file = joinpath(pkgdir(WNNMDenoise), "house_AWGN_$(σₙ).mat")
+    noisy_img = matopen(noisy_img_file) do io
+        read(io, "N_Img")
+    end
 
+    @test assess_psnr(noisy_img, img, 255) ≈ 16.06 atol=1e-2
+
+    img, noisy_img = restrict.((img, noisy_img))
     out = copy(noisy_img)
     f = WNNM(σₙ)
     f(out, noisy_img)
 
     println("PSNR: ", assess_psnr(out, img, 255))
-    @test assess_psnr(out, img, 255) >= 28.8
+    @test assess_psnr(out, img, 255) >= 28.18
 end
