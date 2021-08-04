@@ -179,10 +179,10 @@ end
 function _estimate_img(imgₑₛₜ, imgₙ; patch_size, patch_stride, num_patches, kwargs...)
     patch_size = ntuple(_ -> patch_size, ndims(imgₑₛₜ))
 
-    # only set key patch stride in one dimension, this gives better denoising performance (Why?)
-    # This also follow the original implementation
-    Δ = CartesianIndex(patch_stride, ntuple(_->1, ndims(imgₑₛₜ)-1)...)
-    # Δ = CartesianIndex(ntuple(_->patch_stride, ndims(imgₑₛₜ)))
+    # We set stride in both dimension instead only in column dimension.
+    # This gives less computation but the similar output speaking of PSNR.
+    # Δ = CartesianIndex(patch_stride, ntuple(_->1, ndims(imgₑₛₜ)-1)...) # original version in MATLAB
+    Δ = CartesianIndex(ntuple(_->patch_stride, ndims(imgₑₛₜ)))
     
     r = CartesianIndex(patch_size .÷ 2)
     R = CartesianIndices(imgₑₛₜ)
