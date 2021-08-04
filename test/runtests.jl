@@ -1,4 +1,5 @@
-using Images, WNNMDenoise, TestImages
+using WNNMDenoise
+using ImageTransformations, TestImages, FileIO, ImageQualityIndexes
 using Random
 using Test
 
@@ -7,8 +8,7 @@ using Test
     img = imresize(Float64.(load(imgfile)) * 255, ratio=0.5);
     clean_img = img;
     σₙ = 40;
-    Random.seed!(0)
-    noisy_img = clean_img .+ σₙ .* randn(Float32, size(clean_img))
+    noisy_img = clean_img .+ σₙ .* randn(MersenneTwister(0), Float32, size(clean_img))
 
     @test assess_psnr(noisy_img, img, 255) ≈ 16.08294 atol=1e-5
 
