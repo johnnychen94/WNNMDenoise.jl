@@ -6,6 +6,7 @@ using ImageCore: NumberLike, GenericGrayImage, GenericImage
 using ImageDistances
 using Statistics
 using BlockMatching
+using Test
 
 using ImageQualityIndexes # TODO: remove this
 using ProgressMeter # TODO: remove this
@@ -136,11 +137,13 @@ end
 ## Implementation
 
 function (f::WNNM)(imgₑₛₜ, imgₙ; clean_img=nothing)
-    if imgₑₛₜ === imgₙ
-        imgₑₛₜ = copy(imgₙ)
-    else
-        copyto!(imgₑₛₜ, imgₙ)
-    end
+    # FIXME: this if branch is not type stable
+    # if imgₑₛₜ === imgₙ
+    #     imgₑₛₜ = copy(imgₙ)
+    # else
+    #     copyto!(imgₑₛₜ, imgₙ)
+    # end
+    copyto!(imgₑₛₜ, imgₙ)
 
     T = eltype(eltype(imgₑₛₜ))
     for iter in 1:f.K
@@ -150,16 +153,16 @@ function (f::WNNM)(imgₑₛₜ, imgₙ; clean_img=nothing)
         # white noise). The noise is removed in each iteration, so we have to estimate a noise level
         # at a patch level; the denoising performance on each patch can be different, which means a
         # global noise level can be misleading.
-        σₚ = iter == 1 ? f.noise_level : nothing
+        σₚ = iter == 1 ? f.noise_level : zero(f.noise_level)
 
         # calculating svd using blas threads is not an optimal parallel strategy
         imgₑₛₜ .= with_blas_threads(1) do
-            _estimate_img(imgₑₛₜ, imgₙ;
+            _estimate_img(imgₑₛₜ, imgₙ,
+                f.patch_size[iter],
+                f.patch_stride[iter],
+                f.num_patches[iter],
+                f.window_size;
                 noise_level=f.noise_level,
-                patch_size=f.patch_size[iter],
-                patch_stride=f.patch_stride[iter],
-                num_patches=f.num_patches[iter],
-                window_size=f.window_size,
                 λ=T(f.λ),
                 C=T(f.C),
                 σₚ=σₚ,
@@ -176,13 +179,18 @@ function (f::WNNM)(imgₑₛₜ, imgₙ; clean_img=nothing)
     return imgₑₛₜ
 end
 
-function _estimate_img(imgₑₛₜ, imgₙ; patch_size, patch_stride, num_patches, kwargs...)
-    patch_size = ntuple(_ -> patch_size, ndims(imgₑₛₜ))
+function _estimate_img(imgₑₛₜ::AbstractMatrix, imgₙ,
+        patch_size::Int,
+        patch_stride::Int,
+        num_patches::Int,
+        window_size::Int;
+        kwargs...)
+    patch_size = (patch_size, patch_size)
 
     # We set stride in both dimension instead only in column dimension.
     # This gives less computation but the similar output speaking of PSNR.
-    # Δ = CartesianIndex(patch_stride, ntuple(_->1, ndims(imgₑₛₜ)-1)...) # original version in MATLAB
-    Δ = CartesianIndex(ntuple(_->patch_stride, ndims(imgₑₛₜ)))
+    Δ = CartesianIndex((patch_stride, 1)) # original version in MATLAB
+    Δ = CartesianIndex((patch_stride, patch_stride))
 
     r = CartesianIndex(patch_size .÷ 2)
     R = CartesianIndices(imgₑₛₜ)
@@ -192,14 +200,22 @@ function _estimate_img(imgₑₛₜ, imgₙ; patch_size, patch_stride, num_patch
     W = zeros(Int, axes(imgₑₛₜ))
 
     progress = Progress(length(R[1:patch_stride:end]))
-    out_patches = [Matrix{eltype(imgₑₛₜ)}(undef, prod(patch_size), num_patches) for i in 1:Threads.nthreads()]
+    out_buffer = [Matrix{eltype(imgₑₛₜ)}(undef, prod(patch_size), num_patches) for i in 1:Threads.nthreads()]
+    patch_group_buffer = [Matrix{eltype(imgₑₛₜ)}(undef, prod(patch_size), num_patches) for i in 1:Threads.nthreads()]
     patch_q_indices_buffer = [Matrix{CartesianIndex{2}}(undef, prod(patch_size), num_patches) for i in 1:Threads.nthreads()]
     Threads.@threads for p in R
-        out = out_patches[Threads.threadid()]
+        out = out_buffer[Threads.threadid()]
         patch_q_indices = patch_q_indices_buffer[Threads.threadid()]
+        patch_group = patch_group_buffer[Threads.threadid()]
 
         fill!(out, zero(eltype(out)))
-        patch_q_indices = _estimate_patch!(patch_q_indices, out, imgₑₛₜ, imgₙ, p; patch_size=patch_size, num_patches=num_patches, kwargs...)
+        patch_q_indices = _estimate_patch!(
+            patch_q_indices, out, patch_group,
+            imgₑₛₜ, imgₙ, p,
+            patch_size,
+            num_patches,
+            window_size,
+            ;kwargs...)
 
         # Technically, there will be data racing here if multiple threads are involved, but as we've
         # observed, this doesn't affect the overall performance.
@@ -211,36 +227,42 @@ function _estimate_img(imgₑₛₜ, imgₙ; patch_size, patch_stride, num_patch
     return imgₑₛₜ⁺ ./ max.(W, 1)
 end
 
-function _estimate_patch!(patch_q_indices, out, imgₑₛₜ, imgₙ, p;
-                         noise_level,
-                         patch_size::Tuple,
-                         num_patches::Integer,
-                         window_size,
-                         λ,
-                         C,
-                         σₚ=nothing)
+function _estimate_patch!(patch_q_indices, out, patch_group,
+                          imgₑₛₜ, imgₙ, p,
+                          patch_size::Tuple,
+                          num_patches::Int,
+                          window_size::Int;
+                          noise_level,
+                          λ,
+                          C,
+                          σₚ=nothing)
     rₚ = CartesianIndex(patch_size .÷ 2)
     p_indices = p - rₚ:p + rₚ
 
-    alg = FullSearch(2;
-        patch_radius=rₚ,
-        search_radius=window_size.÷2,
-        search_stride=1
+    alg = FullSearch{Cityblock, 2}(
+        Cityblock(),
+        rₚ,
+        CartesianIndex(window_size, window_size),
+        CartesianIndex(1, 1)
     )
     q_inds = multi_match(alg, imgₑₛₜ, imgₑₛₜ, p; num_patches=num_patches)
     # the memory allocation will be a hospot if we directly generate `patch_q_indices` using `vcat`,
     # thus we pre-allocate it and then copyto the buffer.
     @inbounds for i = 1:length(q_inds)
         q = q_inds[i]
-        copyto!(view(patch_q_indices, :, i), q - rₚ:q + rₚ)
+        R = q - rₚ:q + rₚ
+        copyto!(view(patch_q_indices, :, i), R)
+        copyto!(view(patch_group, :, i), view(imgₑₛₜ, R))
     end
-    m = mean(@view(imgₑₛₜ[patch_q_indices]); dims=2)
+    # patch_group .= @view imgₑₛₜ[patch_q_indices]
+    m = mean(patch_group; dims=2)
 
-    if isnothing(σₚ)
+    if σₚ == 0
         # Try: use the mean estimated σₚ of each patch
         σₚ = _estimate_noise_level(view(imgₑₛₜ, p_indices), view(imgₙ, p_indices), noise_level; λ=λ)
     end
-    out .= @view(imgₑₛₜ[patch_q_indices]) .- m
+    # FIXME: runtime dispatch happens here
+    @. out = patch_group - m
     WNNM_optimizer!(out, out, eltype(out)(σₚ); C=C)
     out .+= m
 
@@ -286,6 +308,7 @@ function WNNM_optimizer!(out, Y, σₚ; C, fixed_point_num_iters=3)
     nσₚ² = n*σₚ²
     Csnσₚ² = C * sqrt(n) * σₚ²
 
+    # TODO: preallocate ΣX
     ΣX = @. sqrt(max(F.S*F.S - nσₚ², zero(σₚ)))
     for _ in 1:fixed_point_num_iters
         # the iterative algorithm proposed in section 2.2.2 in [1]
