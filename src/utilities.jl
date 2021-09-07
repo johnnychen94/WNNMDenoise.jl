@@ -53,12 +53,14 @@ function multi_match(S::FullSearch, ref, frame, p::CartesianIndex, dist_buffer; 
     q_stop = min(last(R_ref), p + S.search_radius)
     candidates = q_start:S.search_stride:q_stop
 
-    patch_p = frame[p - rₚ:p + rₚ]
+    # For performance, we do not need to compare the dense patch to do block matching
+    Δ = CartesianIndex(2, 2)
+    patch_p = frame[p - rₚ:Δ:p + rₚ]
     @assert length(dist_buffer) >= length(candidates)
     dist = dist_buffer
     @inbounds for i in 1:length(candidates)
         q = candidates[i]
-        patch_q = @view ref[q - rₚ:q + rₚ]
+        patch_q = @view ref[q - rₚ:Δ:q + rₚ]
         dist[i] = S.f(patch_p, patch_q)
     end
 
