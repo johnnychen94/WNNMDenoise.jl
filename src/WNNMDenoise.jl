@@ -242,7 +242,7 @@ function _estimate_patch!(patch_q_indices, out, patch_group,
     alg = FullSearch{Cityblock, 2}(
         Cityblock(),
         rₚ,
-        CartesianIndex(window_size, window_size),
+        CartesianIndex(window_size÷2, window_size÷2),
         CartesianIndex(1, 1)
     )
     q_inds = multi_match(alg, imgₑₛₜ, imgₑₛₜ, p; num_patches=num_patches)
