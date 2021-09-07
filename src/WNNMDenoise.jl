@@ -203,14 +203,18 @@ function _estimate_img(imgₑₛₜ::AbstractMatrix, imgₙ,
     out_buffer = [Matrix{eltype(imgₑₛₜ)}(undef, prod(patch_size), num_patches) for i in 1:Threads.nthreads()]
     patch_group_buffer = [Matrix{eltype(imgₑₛₜ)}(undef, prod(patch_size), num_patches) for i in 1:Threads.nthreads()]
     patch_q_indices_buffer = [Matrix{CartesianIndex{2}}(undef, prod(patch_size), num_patches) for i in 1:Threads.nthreads()]
+    m_buffer = [Vector{eltype(imgₑₛₜ)}(undef, prod(patch_size)) for i in 1:Threads.nthreads()]
+
     Threads.@threads for p in R
-        out = out_buffer[Threads.threadid()]
-        patch_q_indices = patch_q_indices_buffer[Threads.threadid()]
-        patch_group = patch_group_buffer[Threads.threadid()]
+        tid = Threads.threadid()
+        out = out_buffer[tid]
+        patch_q_indices = patch_q_indices_buffer[tid]
+        patch_group = patch_group_buffer[tid]
+        m = m_buffer[tid]
 
         fill!(out, zero(eltype(out)))
         patch_q_indices = _estimate_patch!(
-            patch_q_indices, out, patch_group,
+            patch_q_indices, out, patch_group, m,
             imgₑₛₜ, imgₙ, p,
             patch_size,
             num_patches,
@@ -227,7 +231,7 @@ function _estimate_img(imgₑₛₜ::AbstractMatrix, imgₙ,
     return imgₑₛₜ⁺ ./ max.(W, 1)
 end
 
-function _estimate_patch!(patch_q_indices, out, patch_group,
+function _estimate_patch!(patch_q_indices, out, patch_group, m,
                           imgₑₛₜ, imgₙ, p,
                           patch_size::Tuple,
                           num_patches::Int,
@@ -245,7 +249,7 @@ function _estimate_patch!(patch_q_indices, out, patch_group,
         CartesianIndex(window_size÷2, window_size÷2),
         CartesianIndex(1, 1)
     )
-    q_inds = multi_match(alg, imgₑₛₜ, imgₑₛₜ, p; num_patches=num_patches)
+    q_inds = BlockMatching.multi_match(alg, imgₑₛₜ, imgₑₛₜ, p; num_patches=num_patches)
     # the memory allocation will be a hospot if we directly generate `patch_q_indices` using `vcat`,
     # thus we pre-allocate it and then copyto the buffer.
     @inbounds for i = 1:length(q_inds)
@@ -255,13 +259,12 @@ function _estimate_patch!(patch_q_indices, out, patch_group,
         copyto!(view(patch_group, :, i), view(imgₑₛₜ, R))
     end
     # patch_group .= @view imgₑₛₜ[patch_q_indices]
-    m = mean(patch_group; dims=2)
+    mean2!(m, patch_group)
 
     if σₚ == 0
         # Try: use the mean estimated σₚ of each patch
         σₚ = _estimate_noise_level(view(imgₑₛₜ, p_indices), view(imgₙ, p_indices), noise_level; λ=λ)
     end
-    # FIXME: runtime dispatch happens here
     @. out = patch_group - m
     WNNM_optimizer!(out, out, eltype(out)(σₚ); C=C)
     out .+= m
@@ -308,7 +311,6 @@ function WNNM_optimizer!(out, Y, σₚ; C, fixed_point_num_iters=3)
     nσₚ² = n*σₚ²
     Csnσₚ² = C * sqrt(n) * σₚ²
 
-    # TODO: preallocate ΣX
     ΣX = @. sqrt(max(F.S*F.S - nσₚ², zero(σₚ)))
     for _ in 1:fixed_point_num_iters
         # the iterative algorithm proposed in section 2.2.2 in [1]
