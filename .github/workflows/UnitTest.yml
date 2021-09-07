@@ -14,15 +14,15 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        julia-version: ['1.7', 'nightly']
+        julia-version: ['~1.7.0-beta4', 'nightly']
         os: [ubuntu-latest]
         arch: [x64]
         include:
           - os: windows-latest
-            julia-version: '1.7'
+            julia-version: '~1.7.0-beta4'
             arch: x64
           - os: macOS-latest
-            julia-version: '1.7'
+            julia-version: '~1.7.0-beta4'
             arch: x64
 
 
