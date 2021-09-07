@@ -32,13 +32,13 @@ assess_psnr(noisy_img, img, 255)
 # Julia: 16.06
 
 out = copy(noisy_img)
-f = WNNM(σₙ, K=2)
+# f = WNNM(σₙ, K=2)
 f = WNNM(σₙ)
-@time f(out, noisy_img; clean_img=img);
+# @time f(out, noisy_img; clean_img=img);
 @time f(out, noisy_img);
 # MATLAB: 97.365962 seconds
-# Julia:  40.415041 seconds
+# Julia:  17.232886 seconds
 
 assess_psnr(out, img, 255)
 # MATLAB: 31.31
-# Julia:  31.19
+# Julia:  31.35
