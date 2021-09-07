@@ -26,6 +26,19 @@ soft_threshold(x::T, γ::Number) where T <: Number = sign(x) * max(abs(x) - _may
 _maybe_promote(::Type{T}, x) where T = convert(T, x)
 _maybe_promote(::Type{T1}, x::T2) where {T1 <: Union{Bool,Integer},T2} = promote_type(T1, T2)(x)
 
+# optimized for memory
+function mean2!(out::AbstractVector, m::AbstractMatrix)
+    @assert length(out) == size(m, 1)
+    fill!(out, zero(eltype(out)))
+    @inbounds for i in axes(m, 1)
+        rst = out[i]
+        @simd for j in axes(m, 2)
+            rst += m[i, j]
+        end
+        out[i] = rst / size(m, 2)
+    end
+    return out
+end
 # Threads helper
 
 function with_blas_threads(f, num_threads)
