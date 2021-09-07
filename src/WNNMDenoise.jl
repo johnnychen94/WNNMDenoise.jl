@@ -204,6 +204,7 @@ function _estimate_img(imgₑₛₜ::AbstractMatrix, imgₙ,
     patch_group_buffer = [Matrix{eltype(imgₑₛₜ)}(undef, prod(patch_size), num_patches) for i in 1:Threads.nthreads()]
     patch_q_indices_buffer = [Matrix{CartesianIndex{2}}(undef, prod(patch_size), num_patches) for i in 1:Threads.nthreads()]
     m_buffer = [Vector{eltype(imgₑₛₜ)}(undef, prod(patch_size)) for i in 1:Threads.nthreads()]
+    dist_buffer = [Vector{Float64}(undef, (window_size+1)^2) for i in 1:Threads.nthreads()]
 
     Threads.@threads for p in R
         tid = Threads.threadid()
@@ -211,10 +212,11 @@ function _estimate_img(imgₑₛₜ::AbstractMatrix, imgₙ,
         patch_q_indices = patch_q_indices_buffer[tid]
         patch_group = patch_group_buffer[tid]
         m = m_buffer[tid]
+        dist = dist_buffer[tid]
 
         fill!(out, zero(eltype(out)))
         patch_q_indices = _estimate_patch!(
-            patch_q_indices, out, patch_group, m,
+            patch_q_indices, out, patch_group, m, dist,
             imgₑₛₜ, imgₙ, p,
             patch_size,
             num_patches,
@@ -231,7 +233,7 @@ function _estimate_img(imgₑₛₜ::AbstractMatrix, imgₙ,
     return imgₑₛₜ⁺ ./ max.(W, 1)
 end
 
-function _estimate_patch!(patch_q_indices, out, patch_group, m,
+function _estimate_patch!(patch_q_indices, out, patch_group, m, dist,
                           imgₑₛₜ, imgₙ, p,
                           patch_size::Tuple,
                           num_patches::Int,
@@ -249,7 +251,7 @@ function _estimate_patch!(patch_q_indices, out, patch_group, m,
         CartesianIndex(window_size÷2, window_size÷2),
         CartesianIndex(1, 1)
     )
-    q_inds = BlockMatching.multi_match(alg, imgₑₛₜ, imgₑₛₜ, p; num_patches=num_patches)
+    q_inds = multi_match(alg, imgₑₛₜ, imgₑₛₜ, p, dist; num_patches=num_patches)
     # the memory allocation will be a hospot if we directly generate `patch_q_indices` using `vcat`,
     # thus we pre-allocate it and then copyto the buffer.
     @inbounds for i = 1:length(q_inds)
@@ -321,7 +323,8 @@ function WNNM_optimizer!(out, Y, σₚ; C, fixed_point_num_iters=3)
         @. ΣX = soft_threshold(F.S, Csnσₚ² / (ΣX + eps()))
     end
 
-    mul!(out, rmul!(F.U, Diagonal(ΣX)), F.Vt)
+    rmul!(F.U, Diagonal(ΣX))
+    mul!(out, F.U, F.Vt)
 end
 
 
