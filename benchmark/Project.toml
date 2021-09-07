@@ -1,0 +1,9 @@
+[deps]
+FileIO = "5789e2e9-d7fb-5bc7-8068-2c6fae9b9549"
+ImageQualityIndexes = "2996bd0c-7a13-11e9-2da2-2f5ce47296a9"
+ImageShow = "4e3cecfd-b093-5904-9786-8bbb286a6a31"
+LinearAlgebra = "37e2e46d-f89d-539d-b4ee-838fcccc9c8e"
+MAT = "23992714-dd62-5051-b70f-ba57cb901cac"
+MKL = "33e6dc65-8f57-5167-99aa-e5a354878fb2"
+TestImages = "5e47fb64-e119-507b-a336-dd2b206d9990"
+WNNMDenoise = "bf697cf8-868b-4e4c-8c7d-101d0600a0bc"
