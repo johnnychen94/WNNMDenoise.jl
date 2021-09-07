@@ -183,7 +183,7 @@ function _estimate_img(imgₑₛₜ, imgₙ; patch_size, patch_stride, num_patch
     # This gives less computation but the similar output speaking of PSNR.
     # Δ = CartesianIndex(patch_stride, ntuple(_->1, ndims(imgₑₛₜ)-1)...) # original version in MATLAB
     Δ = CartesianIndex(ntuple(_->patch_stride, ndims(imgₑₛₜ)))
-    
+
     r = CartesianIndex(patch_size .÷ 2)
     R = CartesianIndices(imgₑₛₜ)
     R = first(R) +r:Δ:last(R) -r
@@ -269,7 +269,7 @@ function WNNM_optimizer!(out, Y, σₚ; C, fixed_point_num_iters=3)
     # condition for Corollary 1 holds, and thus we could directly get the desired solution in a single
     # step.
 
-    # Here we iterate more than once because we don't know what ΣX is; we have to iterate it a while 
+    # Here we iterate more than once because we don't know what ΣX is; we have to iterate it a while
     # from ΣY to get an relatively good estimation of it.
     # TODO: could we set default σₚ as 0?
     # TODO: is this the best initialization we can get?
