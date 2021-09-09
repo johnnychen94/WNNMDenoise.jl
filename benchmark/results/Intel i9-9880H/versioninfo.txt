@@ -1,0 +1,10 @@
+Julia Version 1.7.0-beta4
+Commit d0c90f37ba (2021-08-24 12:35 UTC)
+Platform Info:
+  OS: macOS (x86_64-apple-darwin19.6.0)
+  CPU: Intel(R) Core(TM) i9-9880H CPU @ 2.30GHz
+  WORD_SIZE: 64
+  LIBM: libopenlibm
+  LLVM: libLLVM-12.0.1 (ORCJIT, skylake)
+Environment:
+  JULIA_NUM_THREADS = 8
