@@ -8,7 +8,8 @@ using LinearAlgebra
 using MKL
 @info BLAS.get_config() # MKL is faster on svd
 
-for σₙ = [20, 40, 60, 80, 100]
+for σₙ = [20, 20, 40, 60, 80, 100]
+    # we run 20 twice to get rid of the compilation time
     img = Float32.(load("house.png")) * 255;
     noisy_img = matopen(joinpath(@__DIR__, "data", "house_AWGN_$(σₙ).mat")) do io
         read(io, "N_Img")
