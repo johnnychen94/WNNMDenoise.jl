@@ -1,8 +1,0 @@
-Julia Version 1.7.0-beta4
-Commit d0c90f37ba (2021-08-24 12:35 UTC)
-Platform Info:
-  OS: Linux (x86_64-pc-linux-gnu)
-  CPU: Intel(R) Xeon(R) CPU E5-2678 v3 @ 2.50GHz
-  WORD_SIZE: 64
-  LIBM: libopenlibm
-  LLVM: libLLVM-12.0.1 (ORCJIT, haswell)
