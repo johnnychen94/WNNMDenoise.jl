@@ -7,7 +7,7 @@ using Test
     img = Float64.(load(imgfile) * 255)
 
     σₙ = 40
-    noisy_img_file = joinpath(pkgdir(WNNMDenoise), "house_AWGN_$(σₙ).mat")
+    noisy_img_file = joinpath(pkgdir(WNNMDenoise), "test", "house_AWGN_$(σₙ).mat")
     noisy_img = matopen(noisy_img_file) do io
         read(io, "N_Img")
     end

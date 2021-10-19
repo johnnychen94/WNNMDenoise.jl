@@ -7,6 +7,7 @@ using ImageDistances
 using Statistics
 using BlockMatching
 using Test
+# using Dates # for benchmark
 
 using ImageQualityIndexes # TODO: remove this
 using ProgressMeter # TODO: remove this
@@ -146,6 +147,8 @@ function (f::WNNM)(imgₑₛₜ, imgₙ; clean_img=nothing)
     copyto!(imgₑₛₜ, imgₙ)
 
     T = eltype(eltype(imgₑₛₜ))
+    # outfile = open(joinpath("benchmark", "julia_$(Int(f.noise_level)).csv"), "w") # for benchmark
+    # println(outfile, "iter,psnr,runtime") # for benchmark
     for iter in 1:f.K
         @. imgₑₛₜ = imgₑₛₜ + f.δ * (imgₙ - imgₑₛₜ) # This iteration can be done more sophisticatedly
 
@@ -156,6 +159,7 @@ function (f::WNNM)(imgₑₛₜ, imgₙ; clean_img=nothing)
         σₚ = iter == 1 ? f.noise_level : zero(f.noise_level)
 
         # calculating svd using blas threads is not an optimal parallel strategy
+        # start_time = now() # for benchmark
         imgₑₛₜ .= with_blas_threads(1) do
             _estimate_img(imgₑₛₜ, imgₙ,
                 f.patch_size[iter],
@@ -168,14 +172,18 @@ function (f::WNNM)(imgₑₛₜ, imgₙ; clean_img=nothing)
                 σₚ=σₚ,
             )
         end
+        # duration = now() - start_time # for benchmark
 
         # TODO: remove this logging part when it is ready
         if !isnothing(clean_img)
-            @info "Result" iter psnr = assess_psnr(clean_img, imgₑₛₜ, 255) num_patches = f.num_patches[iter]
+            cur_psnr = assess_psnr(clean_img, imgₑₛₜ, 255)
+            @info "Result" iter psnr = cur_psnr num_patches = f.num_patches[iter]
+            # println(outfile, "$(iter), $(cur_psnr), $(duration.value/1000.)") # for benchmark
             display(Gray.(imgₑₛₜ ./ 255))
             sleep(0.1)
         end
     end
+    # close(outfile) # for benchmark
     return imgₑₛₜ
 end
 
