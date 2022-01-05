@@ -19,6 +19,11 @@ Performance tricks:
   stride in both dimension, then PNSR is `31.29` in about 26 seconds.
 - When doing block matching, we sample the patch into a smaller one by setting indexing stride `2`.
 
+## Benchmark results
+
+We get at most 25x performance boost compared to the original MATLAB version[2] on 48 cores CPU, for more details and benchmark cases please check out the `benchmark/` folder.
+
+<img src="benchmark/results/Intel%20E5-2698v4.png" alt="benchmark_Intel_E5-2698v4.png" width="1000">
 
 ## References
 
