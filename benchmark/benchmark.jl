@@ -23,7 +23,7 @@ using MKL
 img = Float32.(load("house.png")) * 255;
 
 σₙ = 40
-noisy_img = matopen("house_AWGN_$(σₙ).mat") do io
+noisy_img = matopen(joinpath("benchmark", "data", "house_AWGN_$(σₙ).mat")) do io
     read(io, "N_Img")
 end
 

@@ -16,6 +16,6 @@ Statistics = "10745b16-79ce-11e8-11f9-7d13ad32a3b2"
 [compat]
 ImageCore = "0.9"
 ImageDistances = "0.2.3"
-ImageQualityIndexes = "0.2"
+ImageQualityIndexes = "0.2, 0.3"
 ProgressMeter = "1"
 julia = "1.7"

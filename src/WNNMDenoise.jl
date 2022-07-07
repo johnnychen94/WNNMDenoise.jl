@@ -6,7 +6,7 @@ using ImageCore: NumberLike, GenericGrayImage, GenericImage
 using ImageDistances
 using Statistics
 using BlockMatching
-using Test
+# using Test
 # using Dates # for benchmark
 
 using ImageQualityIndexes # TODO: remove this
